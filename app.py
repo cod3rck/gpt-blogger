@@ -1,17 +1,14 @@
-import os
 from langchain import OpenAI, LLMChain, PromptTemplate
 from langchain.document_loaders import UnstructuredURLLoader
 from langchain.text_splitter import CharacterTextSplitter
+import os
+import openai
 from dotenv import find_dotenv, load_dotenv
 import requests
 import json
 import streamlit as st
 
-load_dotenv()
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
-SHALE_API_KEY = os.getenv("SHALE_API_KEY")
-os.environ['OPENAI_API_BASE'] = "https://shale.live/v1"
-os.environ['OPENAI_API_KEY'] = SHALE_API_KEY
 
 # serp request to get list of news
 
@@ -40,12 +37,12 @@ def find_best_article_urls(response_data, query):
     response_str = json.dumps(response_data)
 
     # create llm to choose best articles
-    llm = OpenAI()
+    llm = OpenAI(model_name="gpt-3.5-turbo", temperature=.7)
     template = """
-    You are a world class journalist & researcher, you are extremely good at find most relevant articles to certain topic;
+    You are a world class blogger & researcher, you are extremely good at find most relevant articles to certain topic;
     {response_str}
     Above is the list of search results for the query {query}.
-    Please choose the best 3 articles from the list, return ONLY an array of the urls, do not include anything else; return ONLY an array of the urls, do not include anything else
+    Please choose the best 3 articles from the list, return ONLY an array of the urls, do not include anything else; return ONLY an array of the urls
     """
 
     prompt_template = PromptTemplate(
@@ -76,12 +73,19 @@ def summarise(data, query):
     text_splitter = CharacterTextSplitter(separator="\n", chunk_size=3000, chunk_overlap=200, length_function=len)
     text = text_splitter.split_documents(data)    
 
-    llm = OpenAI()
+    llm = OpenAI(model_name="gpt-3.5-turbo", temperature=.7)
     template = """
     {text}
-    Summarise the text above into a viral twitter thread about {query}, ensuring it is engaging, concise (3-5 tweets), addresses {query} well, and is easy to read and actionable.
+    You are a world class journalist, and you will try to summarise the text above in order to create a blog post about {query}
+    Please follow all of the following rules:
+    1/ Make sure the content is engaging, informative with good data
+    2/ The content should address the {query} topic very well
+    3/ The content needs to be readable, well-structured, and easily understandable
+    4/ The content needs to give audience actionable advice & insights too
+
     SUMMARY:
     """
+
 
     prompt_template = PromptTemplate(input_variables=["text", "query"], template=template)
 
@@ -96,54 +100,53 @@ def summarise(data, query):
     print(summaries)
     return summaries
 
-# Turn summarization into twitter thread
-def generate_thread(summaries, query):
+# Turn summarization into blog post
+def generate_blog(summaries, query):
     summaries_str = str(summaries)
 
-    llm = OpenAI()
+    llm = OpenAI(model_name="gpt-3.5-turbo", temperature=.7)
     template = """
     {summaries_str}
 
-    You are a world class journalist & twitter influencer, text above is some context about {query}
-    Please write a viral twitter thread about {query} using the text above, and following all rules below:
-    1/ The thread needs to be engaging, informative with good data
-    2/ The thread needs to be around than 3-5 tweets
-    3/ The thread needs to address the {query} topic very well
-    4/ The thread needs to be viral, and get at least 1000 likes
-    5/ The thread needs to be written in a way that is easy to read and understand
-    6/ The thread needs to give audience actionable advice & insights too
+    You are a world class journalist & blogger, text above is some context about {query}
+    Please write a comprehensive blog post about {query} using the text above, and following all rules below:
+    1/ The post needs to be engaging, informative with good data
+    2/ The post needs to address the {query} topic very well
+    3/ The post needs to be written in a way that is easy to read and understand
+    4/ The post needs to give audience actionable advice & insights too
 
-    TWITTER THREAD:
+    BLOG POST:
     """
 
     prompt_template = PromptTemplate(input_variables=["summaries_str", "query"], template=template)
-    twitter_thread_chain = LLMChain(llm=llm, prompt=prompt_template, verbose=True)
+    blog_post_chain = LLMChain(llm=llm, prompt=prompt_template, verbose=True)
 
-    twitter_thread = twitter_thread_chain.predict(summaries_str=summaries_str, query=query)
+    blog_post = blog_post_chain.predict(summaries_str=summaries_str, query=query)
 
-    return twitter_thread
+    return blog_post
+
 
 
 def main():
     load_dotenv(find_dotenv())
 
-    st.set_page_config(page_title="Autonomous blogger - Medium posts", page_icon=":note:")
+    st.set_page_config(page_title="Autonomous researcher - Blog posts", page_icon=":memo:")
 
-    st.header("Autonomous blogger - Medium posts")
-    #openaiapi = st.text_input("OpenAI API Key")
-    query = st.text_input("Topic of blog posts.")
+    st.header("Autonomous researcher - Blog posts :memo:")
+    openaiapi = st.text_input("OpenAI API Key")
+    query = st.text_input("Topic of blog post")
 
-
+    openai.api_key = openaiapi
 
     if query:
         print(query)
-        st.write("Generating twitter thread for: ", query)
+        st.write("Generating blog post for: ", query)
         
         search_results = search(query)
         urls = find_best_article_urls(search_results, query)
         data = get_content_from_urls(urls)
         summaries = summarise(data, query)
-        thread = generate_thread(summaries, query)
+        blog_post = generate_blog(summaries, query)
 
         with st.expander("search results"):
             st.info(search_results)
@@ -153,9 +156,8 @@ def main():
             st.info(data)
         with st.expander("summaries"):
             st.info(summaries)
-        with st.expander("thread"):
-            st.info(thread)
-
+        with st.expander("blog post"):
+            st.info(blog_post)
 
 if __name__ == '__main__':
     main()
